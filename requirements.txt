@@ -1,0 +1,16 @@
+# Core dependencies
+opencv-python
+numpy
+customtkinter
+pillow
+ffmpeg-python
+scenedetect  # PySceneDetect (install name on PyPI is 'scenedetect')
+ultralytics  # For YOLO (ultralytics package)
+segment-anything  # may require GitHub installation depending on version
+mediapipe
+openai-whisper
+# Note: Install torch via the official instructions at https://pytorch.org/
+# Example CPU-only install: pip install torch --index-url https://download.pytorch.org/whl/cpu
+# For CUDA/GPU installs, follow the selector on the PyTorch website to get the correct command.
+
+# Optional: For GPU support, install the CUDA-enabled torch build as per pytorch.org
