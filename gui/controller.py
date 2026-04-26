@@ -54,10 +54,9 @@ from tkinter import filedialog
 import threading
 import os
 
-# Import our layout and themes
 from gui.layout import MainWindow, APP_THEMES, get_optimal_window_size
 from gui.preview import (
-    VideoDisplay, 
+    VideoDisplay,
     is_supported_format,
     VideoQueueManager
 )
@@ -149,62 +148,38 @@ class GUIController:
         
     def run(self):
         """
-        Launch the GUI application.
-        
-        This is the MAIN ENTRY POINT for the GUI.
-        Called from main.py.
-        
-        ==========================================================================
-        WHAT HAPPENS:
-        ==========================================================================
-        
-        1. Get optimal window size (responsive)
-        2. Create CTk window (CustomTkinter)
-        3. Set window title and size
-        4. Set appearance mode (dark/light)
-        5. Create MainWindow (layout)
-        6. Connect callbacks (button clicks)
-        7. Start mainloop (wait for user)
-        
-        ==========================================================================
+        Launch the GUI application with the full MainWindow layout.
+        This is the MAIN ENTRY POINT for the GUI, called from main.py.
         """
         self.logger.info(f"Launching {self.config.app_name} v{self.config.version}")
-        
         try:
             # -------- STEP 1: Get screen size --------
             window_w, window_h = get_optimal_window_size()
             self.logger.info(f"Window size: {window_w}x{window_h}")
-            
+
             # -------- STEP 2: Create window --------
             self.root = ctk.CTk()
             self.root.title(f"{self.config.app_name} v{self.config.version}")
             self.root.geometry(f"{window_w}x{window_h}")
-            self.root.minsize(1280, 720)  # Minimum laptop size
-            
+            self.root.minsize(1280, 720)
+
             # -------- STEP 3: Set theme appearance --------
             initial_theme = APP_THEMES.get(self.current_theme, APP_THEMES["Dark"])
             mode = initial_theme.get("appearance_mode", "dark")
             ctk.set_appearance_mode(mode)
             self.logger.info(f"Appearance mode: {mode}")
-            
-            # -------- STEP 4: Create main window --------
-            self.main_window = MainWindow(theme_name=self.current_theme)
-            
-            # Allow controller to handle events
+
+            # -------- STEP 4: Create and pack MainWindow --------
+            self.main_window = MainWindow(self.root, theme_name=self.current_theme)
             self.main_window.controller = self
-            
-            # -------- STEP 5: Pack and configure --------
-            self.root.grid_rowconfigure(0, weight=1)
-            self.root.grid_columnconfigure(0, weight=1)
             self.main_window.pack(fill="both", expand=True)
-            
-            # -------- STEP 6: Connect button clicks --------
+
+            # -------- STEP 5: Connect button clicks --------
             self._connect_callbacks()
-            
-            # -------- STEP 7: Start event loop --------
-            # This runs until user closes window
+
+            # -------- STEP 6: Start event loop --------
             self.root.mainloop()
-            
+
         except Exception as e:
             self.logger.error(f"GUI error: {e}")
             print(f"Error starting GUI: {e}")
@@ -500,11 +475,7 @@ class GUIController:
 
     def _on_theme_menu_change(self, value):
         """
-        Handle theme dropdown change.
-        
-        When user selects new theme:
-        1. Check if different from current
-        2. Rebuild UI with new theme
+        Handle theme dropdown change dynamically.
         """
         if value != self.current_theme and value in APP_THEMES:
             self.logger.info(f"Changing theme from {self.current_theme} to {value}")
@@ -683,7 +654,7 @@ class GUIController:
 # VIDEO PLAYBACK - ENHANCED FEATURES
 # ==========================================================================
 
-def _load_video_preview(self, video_path: str):
+    def _load_video_preview(self, video_path: str):
         """
         Load video for preview display with all enhancements.
         
@@ -747,25 +718,25 @@ def _load_video_preview(self, video_path: str):
             self.logger.error(f"Video load error: {e}")
             self._update_status(f"Error: {str(e)}", "error")
         
-def _on_play_pause(self):
-    """
-    Handle Play/Pause button click.
-    """
-    if self.video_display is None:
-        return
+    def _on_play_pause(self):
+        """
+        Handle Play/Pause button click.
+        """
+        if self.video_display is None:
+            return
 
-    if self.video_display.is_playing:
-        self.video_display.pause()
-        if hasattr(self.main_window, 'play_btn'):
-            self.main_window.play_btn.configure(text="▶ Play")
-        self.logger.info("Playback paused")
-    else:
-        self.video_display.play()
-        if hasattr(self.main_window, 'play_btn'):
-            self.main_window.play_btn.configure(text="⏸ Pause")
-        self.logger.info("Playback started")
+        if self.video_display.is_playing:
+            self.video_display.pause()
+            if hasattr(self.main_window, 'play_btn'):
+                self.main_window.play_btn.configure(text="▶ Play")
+            self.logger.info("Playback paused")
+        else:
+            self.video_display.play()
+            if hasattr(self.main_window, 'play_btn'):
+                self.main_window.play_btn.configure(text="⏸ Pause")
+            self.logger.info("Playback started")
 
-def _on_timeline_change(self, position: float):
+    def _on_timeline_change(self, position: float):
         """
         Handle timeline slider change.
         """
@@ -775,83 +746,83 @@ def _on_timeline_change(self, position: float):
         # Seek to position
         self.video_display.seek_to_position(position)
         
-def _on_step_forward(self):
-    """Step forward one frame (arrow key or button)."""
-    if self.video_display:
-        self.video_display.step_forward()
-        self.logger.info("Stepped forward one frame")
+    def _on_step_forward(self):
+        """Step forward one frame (arrow key or button)."""
+        if self.video_display:
+            self.video_display.step_forward()
+            self.logger.info("Stepped forward one frame")
         
-def _on_step_backward(self):
-    """Step backward one frame (arrow key or button)."""
-    if self.video_display:
-        self.video_display.step_backward()
-        self.logger.info("Stepped backward one frame")
+    def _on_step_backward(self):
+        """Step backward one frame (arrow key or button)."""
+        if self.video_display:
+            self.video_display.step_backward()
+            self.logger.info("Stepped backward one frame")
         
-def _on_next_video(self):
-    """Go to next video in queue."""
-    if self.queue_manager and self.queue_manager.get_count() > 1:
-        path = self.queue_manager.next_video()
-        if path:
-            self._load_video_preview(path)
-            self._update_status(f"Next: {os.path.basename(path)}", "ready")
+    def _on_next_video(self):
+        """Go to next video in queue."""
+        if self.queue_manager and self.queue_manager.get_count() > 1:
+            path = self.queue_manager.next_video()
+            if path:
+                self._load_video_preview(path)
+                self._update_status(f"Next: {os.path.basename(path)}", "ready")
             
-def _on_previous_video(self):
-    """Go to previous video in queue."""
-    if self.queue_manager and self.queue_manager.get_count() > 1:
-        path = self.queue_manager.previous_video()
-        if path:
-            self._load_video_preview(path)
-            self._update_status(f"Previous: {os.path.basename(path)}", "ready")
+    def _on_previous_video(self):
+        """Go to previous video in queue."""
+        if self.queue_manager and self.queue_manager.get_count() > 1:
+            path = self.queue_manager.previous_video()
+            if path:
+                self._load_video_preview(path)
+                self._update_status(f"Previous: {os.path.basename(path)}", "ready")
             
-def _on_fullscreen(self):
-    """Toggle fullscreen preview."""
-    if self.fullscreen:
-        self.fullscreen.show()
+    def _on_fullscreen(self):
+        """Toggle fullscreen preview."""
+        if self.fullscreen:
+            self.fullscreen.show()
         
-def _on_mute_toggle(self):
-    """Toggle audio mute."""
-    if self.audio_controller:
-        self.audio_controller.is_muted = not self.audio_controller.is_muted
-        status = "Muted" if self.audio_controller.is_muted else "Unmuted"
-        self._update_status(f"Audio: {status}", "ready")
+    def _on_mute_toggle(self):
+        """Toggle audio mute."""
+        if self.audio_controller:
+            self.audio_controller.is_muted = not self.audio_controller.is_muted
+            status = "Muted" if self.audio_controller.is_muted else "Unmuted"
+            self._update_status(f"Audio: {status}", "ready")
         
-def _on_key_press(self, event):
-    """
-    Handle keyboard shortcuts for playback.
-    
-    Keyboard controls:
-    - Space: Play/Pause
-    - Left: Step backward  
-    - Right: Step forward
-    - Up: Previous video
-    - Down: Next video  
-    - F: Fullscreen
-    - M: Mute toggle
-    - Escape: Exit fullscreen
-    """
-    key = event.keysym
-    
-    # Fullscreen mode - catch Escape
-    if self.fullscreen and self.fullscreen.window:
-        if key == 'Escape':
-            self.fullscreen.close()
-        return
-        
-    # Normal mode shortcuts
-    if key == 'space':
-        self._on_play_pause()
-    elif key == 'Left':
-        self._on_step_backward()
-    elif key == 'Right':
-        self._on_step_forward()
-    elif key == 'Up':
-        self._on_previous_video()
-    elif key == 'Down':
-        self._on_next_video()
-    elif key == 'f' or key == 'F':
-        self._on_fullscreen()
-    elif key == 'm' or key == 'M':
-        self._on_mute_toggle()
+    def _on_key_press(self, event):
+        """
+        Handle keyboard shortcuts for playback.
+
+        Keyboard controls:
+        - Space: Play/Pause
+        - Left: Step backward
+        - Right: Step forward
+        - Up: Previous video
+        - Down: Next video
+        - F: Fullscreen
+        - M: Mute toggle
+        - Escape: Exit fullscreen
+        """
+        key = event.keysym
+
+        # Fullscreen mode - catch Escape
+        if self.fullscreen and getattr(self.fullscreen, 'window', None):
+            if key == 'Escape':
+                self.fullscreen.close()
+            return
+
+        # Normal mode shortcuts
+        if key == 'space':
+            self._on_play_pause()
+        elif key == 'Left':
+            self._on_step_backward()
+        elif key == 'Right':
+            self._on_step_forward()
+        elif key == 'Up':
+            self._on_previous_video()
+        elif key == 'Down':
+            self._on_next_video()
+        elif key in ('f', 'F'):
+            self._on_fullscreen()
+        elif key in ('m', 'M'):
+            self._on_mute_toggle()
 
 
 # ==========================================================================
