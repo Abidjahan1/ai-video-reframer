@@ -23,6 +23,14 @@ import time
 import os
 from typing import Optional, Dict, Tuple, Callable
 
+# Audio playback
+try:
+    import pygame
+    PYGAME_AVAILABLE = True
+except ImportError:
+    PYGAME_AVAILABLE = False
+    print("Warning: pygame not available, audio will be disabled")
+
 
 class VideoLoader:
     """
@@ -114,6 +122,7 @@ class VideoDisplay:
     - Uses after() for smooth frame timing
     - Updates only when visible
     - Uses efficient frame resizing
+    - Audio playback with pygame
     """
     
     def __init__(self, preview_frame, time_label, timeline, play_btn, info_label=None):
@@ -132,8 +141,18 @@ class VideoDisplay:
         self.fps = 30
         self.total_frames = 0
         self.duration = 0
+        self.video_path = None
         
         self.timer_id = None
+        
+        # Audio
+        self.audio_initialized = False
+        if PYGAME_AVAILABLE:
+            try:
+                pygame.mixer.init(frequency=44100, size=-16, channels=2, buffer=512)
+                self.audio_initialized = True
+            except Exception as e:
+                print(f"Audio init failed: {e}")
         
         self.display_label = None
         if preview_frame:
@@ -142,6 +161,10 @@ class VideoDisplay:
     
     def load_video(self, path: str) -> bool:
         """Load video and show first frame."""
+        # Stop any existing audio
+        if PYGAME_AVAILABLE and self.audio_initialized:
+            pygame.mixer.music.stop()
+        
         success = self.loader.load(path)
         
         if not success:
@@ -151,6 +174,7 @@ class VideoDisplay:
         self.total_frames = self.loader.info['frame_count']
         self.duration = self.loader.info['duration']
         self.frame_number = 0
+        self.video_path = path
         
         if self.timeline:
             self.timeline.configure(to=self.total_frames)
@@ -247,6 +271,14 @@ class VideoDisplay:
         if self.play_btn:
             self.play_btn.configure(text="⏸ Pause")
         
+        # Start audio
+        if PYGAME_AVAILABLE and self.audio_initialized and self.video_path:
+            try:
+                pygame.mixer.music.load(self.video_path)
+                pygame.mixer.music.play(start=0.0)
+            except Exception as e:
+                print(f"Audio play failed: {e}")
+        
         self._play_next_frame()
     
     def pause(self):
@@ -255,6 +287,10 @@ class VideoDisplay:
         
         if self.play_btn:
             self.play_btn.configure(text="▶ Play")
+        
+        # Pause audio
+        if PYGAME_AVAILABLE and self.audio_initialized:
+            pygame.mixer.music.pause()
         
         if self.timer_id:
             try:
@@ -267,21 +303,27 @@ class VideoDisplay:
         """Play next frame."""
         if not self.is_playing:
             return
-        
+
         self.frame_number += 1
-        
+
         if self.frame_number >= self.total_frames:
             self.frame_number = 0
-        
+            # Stop at end
+            if PYGAME_AVAILABLE and self.audio_initialized:
+                pygame.mixer.music.stop()
+            self.is_playing = False
+            if self.play_btn:
+                self.play_btn.configure(text="▶ Play")
+            return
+
         self._update_frame_display()
-        
+
         if self.timeline:
             self.timeline.set(self.frame_number)
-        
-        # Calculate delay - use larger chunks for smooth playback
-        # Skip frames if needed for performance
+
+        # Smooth playback - use actual FPS timing
         delay = max(1, int(1000 / self.fps))
-        
+
         if self.preview_frame and self.is_playing:
             self.timer_id = self.preview_frame.after(delay, self._play_next_frame)
     
@@ -305,22 +347,42 @@ class VideoDisplay:
         self.seek(frame)
     
     def step_forward(self):
-        """Step forward one frame."""
+        """Step forward 5 seconds."""
         self.pause()
-        if self.frame_number < self.total_frames - 1:
-            self.frame_number += 1
-            self._update_frame_display()
-            if self.timeline:
-                self.timeline.set(self.frame_number)
+        skip_frames = int(self.fps * 5)  # 5 seconds worth of frames
+        self.frame_number = min(self.frame_number + skip_frames, self.total_frames - 1)
+        self._update_frame_display()
+        if self.timeline:
+            self.timeline.set(self.frame_number)
+        
+        # Seek audio if playing
+        if PYGAME_AVAILABLE and self.audio_initialized:
+            seek_time = self.frame_number / self.fps
+            pygame.mixer.music.stop()
+            try:
+                pygame.mixer.music.load(self.video_path)
+                pygame.mixer.music.play(start=seek_time)
+            except:
+                pass
     
     def step_backward(self):
-        """Step backward one frame."""
+        """Step backward 5 seconds."""
         self.pause()
-        if self.frame_number > 0:
-            self.frame_number -= 1
-            self._update_frame_display()
-            if self.timeline:
-                self.timeline.set(self.frame_number)
+        skip_frames = int(self.fps * 5)  # 5 seconds worth of frames
+        self.frame_number = max(self.frame_number - skip_frames, 0)
+        self._update_frame_display()
+        if self.timeline:
+            self.timeline.set(self.frame_number)
+        
+        # Seek audio if playing
+        if PYGAME_AVAILABLE and self.audio_initialized:
+            seek_time = self.frame_number / self.fps
+            pygame.mixer.music.stop()
+            try:
+                pygame.mixer.music.load(self.video_path)
+                pygame.mixer.music.play(start=seek_time)
+            except:
+                pass
     
     def close(self):
         """Stop and close video."""
@@ -329,6 +391,9 @@ class VideoDisplay:
             self.loader.close()
         if self.display_label:
             self.display_label.configure(image=None, text="")
+        # Stop audio
+        if PYGAME_AVAILABLE and self.audio_initialized:
+            pygame.mixer.music.stop()
 
 
 class VideoQueueManager:

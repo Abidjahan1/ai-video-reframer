@@ -3,6 +3,7 @@ opencv-python
 numpy
 customtkinter
 pillow
+pygame
 ffmpeg-python
 scenedetect  # PySceneDetect (install name on PyPI is 'scenedetect')
 ultralytics  # For YOLO (ultralytics package)

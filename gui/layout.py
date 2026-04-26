@@ -45,7 +45,18 @@ v1.0 - Initial Release:
 =========================================================================
 """
 
-import customtkinter as ctk
+try:
+    import customtkinter as ctk
+except Exception as e:
+    # Provide a clearer runtime error if CustomTkinter is not available.
+    # This helps users who see "red" errors in the editor because the
+    # CustomTkinter package is missing from the selected Python interpreter.
+    raise ImportError(
+        "customtkinter is required to run the GUI.\n"
+        "Install it in your active environment: `pip install customtkinter`\n"
+        f"Original error: {e}"
+    )
+
 import screeninfo
 
 
