@@ -739,11 +739,13 @@ class GUIController:
     def _on_timeline_change(self, position: float):
         """
         Handle timeline slider change.
+        Slider returns 0-100, convert to 0.0-1.0
         """
         if self.video_display is None:
             return
-            
-        # Seek to position
+        
+        # Convert from 0-100 to 0.0-1.0
+        position = position / 100.0
         self.video_display.seek_to_position(position)
         
     def _on_step_forward(self):

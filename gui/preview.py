@@ -4,6 +4,7 @@ preview.py - Smart Video Reframer Studio - Video Preview System
 This module handles video loading, playback, and preview display with:
 - Pre-loaded frames for smooth playback
 - Loading progress indicator
+- Audio playback using playsound (pure Python)
 - Modern video player controls
 """
 
@@ -15,6 +16,14 @@ import threading
 import time
 import os
 from typing import Optional, Dict, Tuple, Callable
+
+# Audio playback - pure Python, no external software
+try:
+    from playsound import playsound
+    AUDIO_AVAILABLE = True
+except ImportError:
+    AUDIO_AVAILABLE = False
+    print("Warning: playsound not available, audio disabled")
 
 
 class VideoLoader:
@@ -61,7 +70,7 @@ class VideoLoader:
             'file_size_mb': file_size / (1024 * 1024)
         }
 
-        max_preload = min(frame_count, 500)
+        max_preload = min(frame_count, 1000)  # Increased buffer for longer videos
         self.frame_buffer = []
         self.cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
 
@@ -111,7 +120,7 @@ class VideoLoader:
 
 
 class VideoDisplay:
-    """VideoDisplay - Smooth video playback with pre-loaded frames."""
+    """VideoDisplay - Smooth video playback with pre-loaded frames and audio."""
 
     def __init__(self, preview_frame, time_label, timeline, play_btn, info_label=None):
         self.preview_frame = preview_frame
@@ -123,6 +132,7 @@ class VideoDisplay:
         self.loader = VideoLoader()
         self.tk_image = None
         self.is_playing = False
+        self.audio_playing = False
 
         self.frame_number = 0
         self.fps = 30
@@ -262,6 +272,15 @@ class VideoDisplay:
         if self.play_btn:
             self.play_btn.configure(text="Pause")
 
+        # Start audio in separate thread
+        if AUDIO_AVAILABLE and self.video_path:
+            def audio_thread():
+                try:
+                    playsound(self.video_path, block=False)
+                except Exception as e:
+                    print(f"Audio error: {e}")
+            threading.Thread(target=audio_thread, daemon=True).start()
+
         self._play_loop()
 
     def _play_loop(self):
@@ -303,6 +322,7 @@ class VideoDisplay:
         if not self.loader.cap and not self.loader.frame_buffer:
             return
 
+        # Clamp frame number
         frame_number = max(0, min(frame_number, self.total_frames - 1))
         self.frame_number = frame_number
         self._update_frame_display()
@@ -314,6 +334,8 @@ class VideoDisplay:
         """Seek to position (0.0 to 1.0)."""
         if self.total_frames == 0:
             return
+        # Ensure position is between 0 and 1
+        position = max(0.0, min(1.0, position))
         frame = int(position * self.total_frames)
         self.seek(frame)
 
