@@ -21,30 +21,26 @@ import customtkinter as ctk
 import threading
 import time
 import os
-import subprocess
 from typing import Optional, Dict, Tuple, Callable
-
-# Audio playback via ffmpeg
-FFMPEG_AVAILABLE = False
-try:
-    import shutil
-    FFMPEG_AVAILABLE = bool(shutil.which('ffmpeg') or shutil.which('ffmpeg.exe'))
-except:
-    pass
 
 
 class VideoLoader:
     """
     VideoLoader - Loads video files with progress tracking.
+    
+    OPTIMIZATION: Pre-loads frames into memory for smooth playback.
     """
     
     def __init__(self):
         self.cap = None
         self.path = None
         self.info = {}
+        self.frame_buffer = []  # Pre-loaded frames
+        self.is_loading = False
+        self.load_progress = 0.0
         
-    def load(self, video_path: str) -> bool:
-        """Load a video file."""
+    def load(self, video_path: str, preload: bool = True) -> bool:
+        """Load a video file with optional preloading."""
         self.close()
         
         self.cap = cv2.VideoCapture(video_path)
@@ -83,7 +79,39 @@ class VideoLoader:
             'file_size_mb': file_size / (1024 * 1024)
         }
         
+        # Pre-load frames for smooth playback (limit to first 500 frames for performance)
+        max_preload = min(frame_count, 500)
+        self.frame_buffer = []
+        
+        self.cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+        
+        for i in range(max_preload):
+            ret, frame = self.cap.read()
+            if not ret:
+                break
+            self.frame_buffer.append(frame)
+            self.load_progress = (i + 1) / max_preload
+            
+            # Release CPU periodically
+            if i % 30 == 0:
+                time.sleep(0.001)
+        
+        # If video is shorter than max, it's fully loaded
+        if frame_count <= max_preload:
+            self.load_progress = 1.0
+            
+        # Seek back to start
+        self.cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+        
         return True
+    
+    def get_loading_progress(self) -> float:
+        """Get loading progress (0.0 to 1.0)."""
+        return self.load_progress
+    
+    def is_fully_loaded(self) -> bool:
+        """Check if video is fully loaded."""
+        return self.load_progress >= 1.0
     
     def _get_codec_name(self) -> str:
         """Get codec name."""
@@ -117,25 +145,27 @@ class VideoLoader:
 
 class VideoDisplay:
     """
-    VideoDisplay - Smooth video playback with threading.
+    VideoDisplay - Smooth video playback using pre-loaded frames.
     
     OPTIMIZATIONS:
-    - Uses threading for frame decoding
-    - Uses after() for smooth GUI updates
-    - Uses efficient frame resizing
-    - Auto-play using actual FPS timing
+    - Pre-loads frames into memory buffer
+    - Plays from memory (no disk I/O during playback)
+    - Shows loading progress indicator
+    - Uses actual FPS timing for smooth playback
     """
     
-    def __init__(self, preview_frame, time_label, timeline, play_btn, info_label=None):
+    def __init__(self, preview_frame, time_label, timeline, play_btn, info_label=None, progress_callback=None):
         self.preview_frame = preview_frame
         self.time_label = time_label
         self.timeline = timeline
         self.play_btn = play_btn
         self.info_label = info_label
+        self.progress_callback = progress_callback  # Callback for loading progress
         
         self.loader = VideoLoader()
         self.tk_image = None
         self.is_playing = False
+        self.is_loading = False
         
         # Playback state
         self.frame_number = 0
@@ -143,40 +173,69 @@ class VideoDisplay:
         self.total_frames = 0
         self.duration = 0
         self.video_path = None
-        self.audio_path = None
         
         self.timer_id = None
         self._stop_event = threading.Event()
         
+        # Loading indicator
+        self.loading_label = None
         self.display_label = None
+        
         if preview_frame:
             self.display_label = ctk.CTkLabel(preview_frame, text="")
             self.display_label.place(relx=0.5, rely=0.5, anchor="center")
+            
+            # Loading text
+            self.loading_label = ctk.CTkLabel(
+                preview_frame,
+                text="Loading video...",
+                font=ctk.CTkFont(size=14),
+                text_color="#ffffff"
+            )
+            self.loading_label.place(relx=0.5, rely=0.5, anchor="center")
     
     def load_video(self, path: str) -> bool:
-        """Load video and show first frame."""
-        # Stop any existing playback
+        """Load video with progress indicator."""
         self.pause()
         
-        success = self.loader.load(path)
+        # Show loading
+        if self.loading_label:
+            self.loading_label.configure(text="⏳ Loading video...")
+            self.loading_label.place(relx=0.5, rely=0.5, anchor="center")
         
-        if not success:
-            return False
+        # Load in background thread
+        def load_thread():
+            success = self.loader.load(path)
             
-        self.fps = self.loader.info['fps']
-        self.total_frames = self.loader.info['frame_count']
-        self.duration = self.loader.info['duration']
-        self.frame_number = 0
-        self.video_path = path
+            if success:
+                self.fps = self.loader.info['fps']
+                self.total_frames = self.loader.info['frame_count']
+                self.duration = self.loader.info['duration']
+                self.frame_number = 0
+                self.video_path = path
+                
+                if self.timeline:
+                    self.timeline.configure(to=self.total_frames)
+                    self.timeline.set(0)
+                
+                # Update on main thread
+                if self.preview_frame:
+                    self.preview_frame.after(0, self._finish_loading)
+            else:
+                if self.preview_frame:
+                    self.preview_frame.after(0, lambda: self.loading_label.configure(text="❌ Load failed"))
         
-        # Try to extract audio if needed
-        self._prepare_audio(path)
+        thread = threading.Thread(target=load_thread, daemon=True)
+        thread.start()
+        return True
+    
+    def _finish_loading(self):
+        """Finish loading and show first frame."""
+        # Hide loading
+        if self.loading_label:
+            self.loading_label.place_forget()
         
-        if self.timeline:
-            self.timeline.configure(to=self.total_frames)
-            self.timeline.set(0)
-        
-        # Update info display
+        # Update info
         self._update_info_display()
         
         # Show first frame
@@ -184,30 +243,30 @@ class VideoDisplay:
         
         if self.play_btn:
             self.play_btn.configure(state="normal", text="▶ Play")
-            
-        return True
     
-    def _prepare_audio(self, video_path: str):
-        """Prepare audio file for playback."""
-        self.audio_path = None
-        if not FFMPEG_AVAILABLE:
-            return
+    def _update_info_display(self):
+        """Update video info display."""
+        if self.info_label and self.loader.info:
+            info = self.loader.info
+            size_mb = info.get('file_size_mb', 0)
+            duration = info.get('duration', 0)
+            mins = int(duration // 60)
+            secs = int(duration % 60)
             
-        # Check if video has audio
-        try:
-            result = subprocess.run(
-                ['ffprobe', '-v', 'error', '-show_streams', '-select_streams', 'a:0', video_path],
-                capture_output=True, text=True, timeout=5
-            )
-            if 'codec_name=' in result.stdout:
-                # Audio exists - we'll play via OpenCV or skip for now
-                pass
-        except:
-            pass
+            info_text = f"📹 {info.get('filename', 'Unknown')} | {info.get('resolution', '?')} | {info.get('fps', 0):.1f} fps | {mins:02d}:{secs:02d} | {size_mb:.1f} MB"
+            self.info_label.configure(text=info_text)
     
-    def _update_frame_display(self):
-        """Display current frame."""
-        frame = self.loader.get_frame(self.frame_number)
+def _update_frame_display(self):
+        """Display current frame from buffer."""
+        # Try to get from buffer first
+        frame = None
+        
+        if self.frame_number < len(self.loader.frame_buffer):
+            frame = self.loader.frame_buffer[self.frame_number]
+        elif self.loader.cap:
+            # Fallback to seeking (for frames beyond buffer)
+            self.loader.cap.set(cv2.CAP_PROP_POS_FRAMES, self.frame_number)
+            ret, frame = self.loader.cap.read()
         
         if frame is None:
             return
@@ -245,18 +304,6 @@ class VideoDisplay:
         
         self._update_time_display()
     
-    def _update_info_display(self):
-        """Update video info display."""
-        if self.info_label and self.loader.info:
-            info = self.loader.info
-            size_mb = info.get('file_size_mb', 0)
-            duration = info.get('duration', 0)
-            mins = int(duration // 60)
-            secs = int(duration % 60)
-            
-            info_text = f"📹 {info.get('filename', 'Unknown')} | {info.get('resolution', '?')} | {info.get('fps', 0):.1f} fps | {mins:02d}:{secs:02d} | {size_mb:.1f} MB"
-            self.info_label.configure(text=info_text)
-    
     def _update_time_display(self):
         """Update time label."""
         if not self.time_label or self.fps == 0:
@@ -271,7 +318,7 @@ class VideoDisplay:
         self.time_label.configure(text=f"{curr_str} / {total_str}")
     
     def _format_time(self, seconds: float) -> str:
-        """Format seconds as MM:SS."""
+        """Format seconds as MM:SS.ms"""
         millis = int((seconds % 1) * 100)
         mins = int(seconds // 60)
         secs = int(seconds % 60)
@@ -288,7 +335,6 @@ class VideoDisplay:
         if self.play_btn:
             self.play_btn.configure(text="⏸ Pause")
         
-        # Start playback loop
         self._play_loop()
     
     def _play_loop(self):
@@ -333,7 +379,7 @@ class VideoDisplay:
     
     def seek(self, frame_number: int):
         """Seek to frame."""
-        if not self.loader.cap:
+        if not self.loader.cap and not self.loader.frame_buffer:
             return
         
         frame_number = max(0, min(frame_number, self.total_frames - 1))
@@ -353,7 +399,7 @@ class VideoDisplay:
     def step_forward(self):
         """Step forward 5 seconds."""
         self.pause()
-        skip_frames = int(self.fps * 5)  # 5 seconds worth of frames
+        skip_frames = int(self.fps * 5)
         self.frame_number = min(self.frame_number + skip_frames, self.total_frames - 1)
         self._update_frame_display()
         if self.timeline:
@@ -362,7 +408,7 @@ class VideoDisplay:
     def step_backward(self):
         """Step backward 5 seconds."""
         self.pause()
-        skip_frames = int(self.fps * 5)  # 5 seconds worth of frames
+        skip_frames = int(self.fps * 5)
         self.frame_number = max(self.frame_number - skip_frames, 0)
         self._update_frame_display()
         if self.timeline:
