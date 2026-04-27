@@ -3,7 +3,7 @@ opencv-python
 numpy
 customtkinter
 pillow
-playsound  # Pure Python audio playback - no external software needed
+pygame  # For audio playback during preview
 ffmpeg-python
 scenedetect  # PySceneDetect (install name on PyPI is 'scenedetect')
 ultralytics  # For YOLO (ultralytics package)

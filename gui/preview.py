@@ -4,7 +4,7 @@ preview.py - Smart Video Reframer Studio - Video Preview System
 This module handles video loading, playback, and preview display with:
 - Pre-loaded frames for smooth playback
 - Loading progress indicator
-- Audio playback using playsound (pure Python)
+- Audio playback using pygame
 - Modern video player controls
 """
 
@@ -15,15 +15,18 @@ import customtkinter as ctk
 import threading
 import time
 import os
+import tempfile
+import subprocess
 from typing import Optional, Dict, Tuple, Callable
 
-# Audio playback - pure Python, no external software
+# Audio playback using pygame
 try:
-    from playsound import playsound
+    import pygame
+    pygame.mixer.init(frequency=44100, size=-16, channels=2, buffer=512)
     AUDIO_AVAILABLE = True
 except ImportError:
     AUDIO_AVAILABLE = False
-    print("Warning: playsound not available, audio disabled")
+    print("Warning: pygame not available, audio disabled")
 
 
 class VideoLoader:
@@ -132,7 +135,8 @@ class VideoDisplay:
         self.loader = VideoLoader()
         self.tk_image = None
         self.is_playing = False
-        self.audio_playing = False
+        self.audio_path = None
+        self.current_audio_pos = 0
 
         self.frame_number = 0
         self.fps = 30
@@ -160,6 +164,7 @@ class VideoDisplay:
     def load_video(self, path: str) -> bool:
         """Load video with progress."""
         self.pause()
+        self._cleanup_audio()
 
         if self.loading_label:
             self.loading_label.configure(text="Loading video...")
@@ -173,6 +178,9 @@ class VideoDisplay:
                 self.duration = self.loader.info['duration']
                 self.frame_number = 0
                 self.video_path = path
+
+                # Extract audio for pygame
+                self._extract_audio(path)
 
                 if self.timeline:
                     self.timeline.configure(to=self.total_frames)
@@ -188,16 +196,50 @@ class VideoDisplay:
         thread.start()
         return True
 
-    def _finish_loading(self):
-        """Finish loading."""
-        if self.loading_label:
-            self.loading_label.place_forget()
+    def _extract_audio(self, video_path: str):
+        """Extract audio from video to temp WAV file."""
+        self.audio_path = None
+        if not AUDIO_AVAILABLE:
+            return
 
-        self._update_info_display()
-        self._update_frame_display()
+        try:
+            # Create temp file for audio
+            temp_dir = tempfile.gettempdir()
+            self.audio_path = os.path.join(temp_dir, f"video_audio_{os.getpid()}.wav")
 
-        if self.play_btn:
-            self.play_btn.configure(state="normal", text="Play")
+            # Try to extract audio using ffmpeg
+            result = subprocess.run([
+                'ffmpeg', '-y', '-i', video_path,
+                '-vn', '-acodec', 'pcm_s16le',
+                '-ar', '44100', '-ac', '2',
+                self.audio_path
+            ], capture_output=True, timeout=30)
+
+            if result.returncode != 0:
+                print("FFmpeg audio extraction failed, trying alternative...")
+                # Alternative: just use video path (some formats work with pygame)
+                self.audio_path = video_path
+        except FileNotFoundError:
+            print("FFmpeg not found, audio may not work")
+            self.audio_path = video_path
+        except Exception as e:
+            print(f"Audio extraction error: {e}")
+            self.audio_path = video_path
+
+    def _cleanup_audio(self):
+        """Clean up audio resources."""
+        if AUDIO_AVAILABLE:
+            try:
+                pygame.mixer.music.stop()
+            except:
+                pass
+        if self.audio_path and self.audio_path.endswith('.wav'):
+            try:
+                if os.path.exists(self.audio_path):
+                    os.remove(self.audio_path)
+            except:
+                pass
+        self.audio_path = None
 
     def _update_info_display(self):
         if self.info_label and self.loader.info:
@@ -272,14 +314,13 @@ class VideoDisplay:
         if self.play_btn:
             self.play_btn.configure(text="Pause")
 
-        # Start audio in separate thread
-        if AUDIO_AVAILABLE and self.video_path:
-            def audio_thread():
-                try:
-                    playsound(self.video_path, block=False)
-                except Exception as e:
-                    print(f"Audio error: {e}")
-            threading.Thread(target=audio_thread, daemon=True).start()
+        # Start audio
+        if AUDIO_AVAILABLE and self.audio_path:
+            try:
+                pygame.mixer.music.load(self.audio_path)
+                pygame.mixer.music.play(start=self.current_audio_pos)
+            except Exception as e:
+                print(f"Audio play error: {e}")
 
         self._play_loop()
 
@@ -292,6 +333,12 @@ class VideoDisplay:
 
         if self.frame_number >= self.total_frames:
             self.frame_number = 0
+            if AUDIO_AVAILABLE:
+                pygame.mixer.music.stop()
+            self.is_playing = False
+            if self.play_btn:
+                self.play_btn.configure(text="Play")
+            return
 
         self._update_frame_display()
 
@@ -306,9 +353,14 @@ class VideoDisplay:
     def pause(self):
         """Pause playback."""
         self.is_playing = False
+        if AUDIO_AVAILABLE:
+            self.current_audio_pos = pygame.mixer.music.get_pos() / 1000.0
 
         if self.play_btn:
             self.play_btn.configure(text="Play")
+
+        if AUDIO_AVAILABLE:
+            pygame.mixer.music.pause()
 
         if self.timer_id:
             try:
