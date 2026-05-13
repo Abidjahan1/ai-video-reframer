@@ -1,0 +1,15 @@
+{
+  "name": "CONTINUE",
+  "arguments": {
+    "project-overview": "Detailed description of the project's purpose, key technologies used, and high-level architecture.",
+    "getting-started": "Prerequisites (required software, dependencies), installation instructions, basic usage examples, running tests.",
+    "structure": "Overview of main directories and their purpose, key files and their roles, important configuration files.",
+    "development-workflow": "Coding standards or conventions, testing approach, build and deployment process, contribution guidelines.",
+    "key-concepts": "Domain-specific terminology, core abstractions, design patterns used.",
+    "common-tasks": "Step-by-step guides for frequent development tasks, examples of common operations.",
+    "troubleshooting": "Common issues and their solutions, debugging tips.",
+    "references": "Links to relevant documentation, important resources."
+  }
+}
+
+
